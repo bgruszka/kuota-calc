@@ -4,6 +4,7 @@ package calc
 import (
 	"errors"
 	"fmt"
+	v2 "k8s.io/api/autoscaling/v2"
 	"slices"
 
 	openshiftAppsV1 "github.com/openshift/api/apps/v1"
@@ -44,6 +45,13 @@ func (cErr CalculationError) Unwrap() error {
 	return cErr.err
 }
 
+type ResourceObject struct {
+	Object       runtime.Object
+	Kind         string
+	Version      string
+	LinkedObject runtime.Object
+}
+
 // ResourceUsage summarizes the usage of compute resources for a k8s resource.
 type ResourceUsage struct {
 	NormalResources  Resources
@@ -60,6 +68,7 @@ type Details struct {
 	Strategy    string
 	Replicas    int32
 	MaxReplicas int32
+	Hpa         bool
 }
 
 // Resources contains the limits and requests for cpu and memory that are typically used in kubernetes and openshift.
@@ -236,17 +245,7 @@ func Total(maxRollout int, usage []*ResourceUsage) Resources {
 	}
 }
 
-// ResourceQuotaFromYaml decodes a single yaml document into a k8s object. Then performs a type assertion
-// on the object and calculates the resource needs of it.
-// Currently supported:
-// * apps.openshift.io/v1 - DeploymentConfig
-// * apps/v1 - Deployment
-// * apps/v1 - StatefulSet
-// * apps/v1 - DaemonSet
-// * batch/v1 - CronJob
-// * batch/v1 - Job
-// * v1 - Pod
-func ResourceQuotaFromYaml(yamlData []byte) (*ResourceUsage, error) {
+func ConvertToRuntimeObjectFromYaml(yamlData []byte) (runtime.Object, *string, *string, error) {
 	var version string
 
 	var kind string
@@ -271,31 +270,47 @@ func ResourceQuotaFromYaml(yamlData []byte) (*ResourceUsage, error) {
 				version = gvk1.Version
 			}
 		} else {
-			return nil, fmt.Errorf("decoding yaml data: %w", err)
+			return nil, nil, nil, fmt.Errorf("decoding yaml data: %w", err)
 		}
 	} else {
 		kind = gvk.Kind
 		version = gvk.Version
 	}
 
-	switch obj := object.(type) {
+	return object, &kind, &version, nil
+}
+
+// ResourceQuotaFromYaml decodes a single yaml document into a k8s object. Then performs a type assertion
+// on the object and calculates the resource needs of it.
+// Currently supported:
+// * apps.openshift.io/v1 - DeploymentConfig
+// * apps/v1 - Deployment
+// * apps/v1 - StatefulSet
+// * apps/v1 - DaemonSet
+// * batch/v1 - CronJob
+// * batch/v1 - Job
+// * v1 - Pod
+func ResourceQuotaFromYaml(resourceObject ResourceObject) (*ResourceUsage, error) {
+	switch obj := resourceObject.Object.(type) {
 	case *openshiftAppsV1.DeploymentConfig:
 		usage, err := deploymentConfig(*obj)
 		if err != nil {
 			return nil, CalculationError{
-				Version: gvk.Version,
-				Kind:    gvk.Kind,
+				Version: resourceObject.Version,
+				Kind:    resourceObject.Kind,
 				err:     err,
 			}
 		}
 
 		return usage, nil
 	case *appsv1.Deployment:
-		usage, err := deployment(*obj)
+		hpa, _ := resourceObject.LinkedObject.(*v2.HorizontalPodAutoscaler)
+
+		usage, err := deployment(*obj, hpa)
 		if err != nil {
 			return nil, CalculationError{
-				Version: gvk.Version,
-				Kind:    gvk.Kind,
+				Version: resourceObject.Version,
+				Kind:    resourceObject.Kind,
 				err:     err,
 			}
 		}
@@ -305,8 +320,8 @@ func ResourceQuotaFromYaml(yamlData []byte) (*ResourceUsage, error) {
 		usage, err := statefulSet(*obj)
 		if err != nil {
 			return nil, CalculationError{
-				Version: gvk.Version,
-				Kind:    gvk.Kind,
+				Version: resourceObject.Version,
+				Kind:    resourceObject.Kind,
 				err:     err,
 			}
 		}
@@ -322,8 +337,8 @@ func ResourceQuotaFromYaml(yamlData []byte) (*ResourceUsage, error) {
 		return pod(*obj), nil
 	default:
 		return nil, CalculationError{
-			Version: version,
-			Kind:    kind,
+			Version: resourceObject.Version,
+			Kind:    resourceObject.Kind,
 			err:     ErrResourceNotSupported,
 		}
 	}

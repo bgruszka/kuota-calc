@@ -6,6 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	appsv1 "k8s.io/api/apps/v1"
+	v2 "k8s.io/api/autoscaling/v2"
 	"runtime"
 	"text/tabwriter"
 
@@ -84,6 +86,9 @@ func (opts *KuotaCalcOpts) run() error {
 
 	yamlReader := yaml.NewYAMLReader(bufio.NewReader(opts.In))
 
+	hpas := []*v2.HorizontalPodAutoscaler{}
+	objects := []calc.ResourceObject{}
+
 	for {
 		data, err := yamlReader.Read()
 		if err != nil {
@@ -94,7 +99,29 @@ func (opts *KuotaCalcOpts) run() error {
 			return fmt.Errorf("reading input: %w", err)
 		}
 
-		usage, err := calc.ResourceQuotaFromYaml(data)
+		runtimeObject, kind, version, err := calc.ConvertToRuntimeObjectFromYaml(data)
+
+		horizontalPodAutoscaler, ok := runtimeObject.(*v2.HorizontalPodAutoscaler)
+
+		if ok {
+			hpas = append(hpas, horizontalPodAutoscaler)
+		}
+
+		objects = append(objects, calc.ResourceObject{Object: runtimeObject, Kind: *kind, Version: *version})
+	}
+
+	for _, obj := range objects {
+		deployment, ok := obj.Object.(*appsv1.Deployment)
+
+		if ok {
+			for _, hpa := range hpas {
+				if hpa.Spec.ScaleTargetRef.Name == deployment.Name {
+					obj.LinkedObject = hpa
+				}
+			}
+		}
+
+		usage, err := calc.ResourceQuotaFromYaml(obj)
 		if err != nil {
 			if errors.Is(err, calc.ErrResourceNotSupported) {
 				if opts.debug {
@@ -122,10 +149,15 @@ func (opts *KuotaCalcOpts) run() error {
 func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
 	w := tabwriter.NewWriter(opts.Out, 0, 0, 4, ' ', tabwriter.TabIndent)
 
-	_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\t\n")
+	_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\tIsHPA\t\n")
 
 	for _, u := range usage {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t\n",
+		isHpa := "false"
+		if u.Details.Hpa {
+			isHpa = "true"
+		}
+
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
 			u.Details.Version,
 			u.Details.Kind,
 			u.Details.Name,
@@ -136,6 +168,7 @@ func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
 			u.RolloutResources.CPUMax.String(),
 			u.RolloutResources.MemoryMin.String(),
 			u.RolloutResources.MemoryMax.String(),
+			isHpa,
 		)
 	}
 
