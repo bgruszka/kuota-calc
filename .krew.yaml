@@ -4,7 +4,7 @@ metadata:
   name: kuota-calc
 spec:
   version: {{ .TagName }}
-  homepage: https://github.com/druppelt/kuota-calc
+  homepage: https://github.com/bgruszka/kuota-calc
   shortDescription: Calculate needed quota to perform rolling updates.
   description: |
     This plugin calculates the maximum needed resource quota for you. The deployment
@@ -13,23 +13,23 @@ spec:
     enough resource quota.
   caveats: |
     * Currently kuota-calc supports apps/v1.Deployment, apps/v1.StatefulSet,
-    apps/v1.DaemonSet, batch/v1.CronJob, batch/v1.Job and v1.Pod resources
+    apps/v1.DaemonSet, batch/v1.CronJob, batch/v1.Job, v1.Pod and autoscaling/v2.HorizontalPodAutoscaler resources.
   platforms:
   - selector:
       matchLabels:
         os: darwin
         arch: amd64
-    {{ addURIAndSha "https://github.com/druppelt/kuota-calc/releases/download/{{ .TagName }}/kuota-calc_darwin_x86_64.zip" .TagName }}
+    {{ addURIAndSha "https://github.com/bgruszka/kuota-calc/releases/download/{{ .TagName }}/kuota-calc_darwin_x86_64.zip" .TagName }}
     bin: kuota-calc
   - selector:
       matchLabels:
         os: linux
         arch: amd64
-    {{ addURIAndSha "https://github.com/druppelt/kuota-calc/releases/download/{{ .TagName }}/kuota-calc_linux_x86_64.zip" .TagName }}
+    {{ addURIAndSha "https://github.com/bgruszka/kuota-calc/releases/download/{{ .TagName }}/kuota-calc_linux_x86_64.zip" .TagName }}
     bin: kuota-calc
   - selector:
       matchLabels:
         os: windows
         arch: amd64
-    {{ addURIAndSha "https://github.com/druppelt/kuota-calc/releases/download/{{ .TagName }}/kuota-calc_windows_x86_64.zip" .TagName }}
+    {{ addURIAndSha "https://github.com/bgruszka/kuota-calc/releases/download/{{ .TagName }}/kuota-calc_windows_x86_64.zip" .TagName }}
     bin: kuota-calc.exe

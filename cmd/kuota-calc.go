@@ -8,6 +8,8 @@ import (
 	"io"
 	appsv1 "k8s.io/api/apps/v1"
 	v2 "k8s.io/api/autoscaling/v2"
+	"k8s.io/apimachinery/pkg/util/json"
+	"log"
 	"runtime"
 	"text/tabwriter"
 
@@ -25,6 +27,24 @@ const (
     cat deployment.yaml | %[1]s --detailed`
 )
 
+type JsonResource struct {
+	Version       string `json:"version"`
+	Kind          string `json:"kind"`
+	Name          string `json:"name"`
+	Replicas      int32  `json:"replicas"`
+	Strategy      string `json:"strategy"`
+	MaxReplicas   int32  `json:"maxReplicas"`
+	CPURequest    string `json:"CPURequest"`
+	CPULimit      string `json:"CPULimit"`
+	MemoryRequest string `json:"memoryRequest"`
+	MemoryLimit   string `json:"memoryLimit"`
+	IsHPA         bool   `json:"isHPA"`
+}
+
+type JsonOutput struct {
+	Resources []JsonResource `json:"resources"`
+}
+
 // KuotaCalcOpts holds all command options.
 type KuotaCalcOpts struct {
 	genericclioptions.IOStreams
@@ -34,6 +54,7 @@ type KuotaCalcOpts struct {
 	detailed    bool
 	version     bool
 	maxRollouts int
+	json        bool
 	// files    []string
 
 	versionInfo *Version
@@ -64,6 +85,7 @@ func NewKuotaCalcCmd(version *Version, streams genericclioptions.IOStreams) *cob
 	cmd.Flags().BoolVar(&opts.detailed, "detailed", false, "enable detailed output")
 	cmd.Flags().BoolVar(&opts.version, "version", false, "print version and exit")
 	cmd.Flags().IntVar(&opts.maxRollouts, "max-rollouts", -1, "limit the simultaneous rollout to the n most expensive rollouts per resource")
+	cmd.Flags().BoolVar(&opts.json, "json", false, "output to json")
 
 	return cmd
 }
@@ -147,45 +169,76 @@ func (opts *KuotaCalcOpts) run() error {
 }
 
 func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
-	w := tabwriter.NewWriter(opts.Out, 0, 0, 4, ' ', tabwriter.TabIndent)
+	if !opts.json {
+		w := tabwriter.NewWriter(opts.Out, 0, 0, 4, ' ', tabwriter.TabIndent)
 
-	_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\tIsHPA\t\n")
+		_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\tIsHPA\t\n")
 
-	for _, u := range usage {
-		isHpa := "false"
-		if u.Details.Hpa {
-			isHpa = "true"
+		for _, u := range usage {
+			isHpa := "false"
+			if u.Details.Hpa {
+				isHpa = "true"
+			}
+
+			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
+				u.Details.Version,
+				u.Details.Kind,
+				u.Details.Name,
+				u.Details.Replicas,
+				u.Details.Strategy,
+				u.Details.MaxReplicas,
+				u.RolloutResources.CPUMin.String(),
+				u.RolloutResources.CPUMax.String(),
+				u.RolloutResources.MemoryMin.String(),
+				u.RolloutResources.MemoryMax.String(),
+				isHpa,
+			)
 		}
 
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
-			u.Details.Version,
-			u.Details.Kind,
-			u.Details.Name,
-			u.Details.Replicas,
-			u.Details.Strategy,
-			u.Details.MaxReplicas,
-			u.RolloutResources.CPUMin.String(),
-			u.RolloutResources.CPUMax.String(),
-			u.RolloutResources.MemoryMin.String(),
-			u.RolloutResources.MemoryMax.String(),
-			isHpa,
-		)
-	}
+		if err := w.Flush(); err != nil {
+			_, _ = fmt.Fprintf(opts.Out, "printing detailed resources to tabwriter failed: %v\n", err)
+		}
 
-	if err := w.Flush(); err != nil {
-		_, _ = fmt.Fprintf(opts.Out, "printing detailed resources to tabwriter failed: %v\n", err)
-	}
+		if opts.maxRollouts > -1 {
+			_, _ = fmt.Fprintf(opts.Out, "\nTable assuming simultaneous rollout of all resources\n")
+			_, _ = fmt.Fprintf(opts.Out, "Total assuming simultaneous rollout of %d resources\n", opts.maxRollouts)
+		} else {
+			_, _ = fmt.Fprintf(opts.Out, "\nTable and Total assuming simultaneous rollout of all resources\n")
+		}
 
-	if opts.maxRollouts > -1 {
-		_, _ = fmt.Fprintf(opts.Out, "\nTable assuming simultaneous rollout of all resources\n")
-		_, _ = fmt.Fprintf(opts.Out, "Total assuming simultaneous rollout of %d resources\n", opts.maxRollouts)
+		_, _ = fmt.Fprintf(opts.Out, "\nTotal\n")
+
+		opts.printSummary(usage)
 	} else {
-		_, _ = fmt.Fprintf(opts.Out, "\nTable and Total assuming simultaneous rollout of all resources\n")
+		jsonOutput := JsonOutput{}
+		jsonItems := []JsonResource{}
+
+		for _, u := range usage {
+			jsonItems = append(jsonItems, JsonResource{
+				Version:       u.Details.Version,
+				Kind:          u.Details.Kind,
+				Name:          u.Details.Name,
+				Replicas:      u.Details.Replicas,
+				Strategy:      u.Details.Strategy,
+				MaxReplicas:   u.Details.MaxReplicas,
+				CPURequest:    u.RolloutResources.CPUMin.String(),
+				CPULimit:      u.RolloutResources.CPUMax.String(),
+				MemoryRequest: u.RolloutResources.MemoryMin.String(),
+				MemoryLimit:   u.RolloutResources.MemoryMax.String(),
+				IsHPA:         u.Details.Hpa,
+			})
+		}
+
+		jsonOutput.Resources = jsonItems
+
+		marshaled, err := json.Marshal(jsonOutput)
+
+		if err != nil {
+			log.Fatalf("marshaling error: %s", err)
+		}
+
+		_, _ = fmt.Fprintln(opts.Out, string(marshaled))
 	}
-
-	_, _ = fmt.Fprintf(opts.Out, "\nTotal\n")
-
-	opts.printSummary(usage)
 }
 
 func (opts *KuotaCalcOpts) printSummary(usage []*calc.ResourceUsage) {
