@@ -14,7 +14,7 @@ import (
 	v2 "k8s.io/api/autoscaling/v2"
 	"k8s.io/apimachinery/pkg/util/json"
 
-	"github.com/druppelt/kuota-calc/internal/calc"
+	"github.com/bgruszka/kuota-calc/internal/calc"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericclioptions"

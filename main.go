@@ -4,7 +4,7 @@ package main
 import (
 	"os"
 
-	"github.com/druppelt/kuota-calc/cmd"
+	"github.com/bgruszka/kuota-calc/cmd"
 	"github.com/spf13/pflag"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
 )

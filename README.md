@@ -1,7 +1,7 @@
-![ci](https://github.com/druppelt/kuota-calc/workflows/ci/badge.svg)
-![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/druppelt/kuota-calc)
-[![Go Report Card](https://goreportcard.com/badge/github.com/druppelt/kuota-calc)](https://goreportcard.com/report/github.com/druppelt/kuota-calc)
-![License](https://img.shields.io/github/license/druppelt/kuota-calc)
+![ci](https://github.com/bgruszka/kuota-calc/workflows/ci/badge.svg)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/bgruszka/kuota-calc)
+[![Go Report Card](https://goreportcard.com/badge/github.com/bgruszka/kuota-calc)](https://goreportcard.com/report/github.com/bgruszka/kuota-calc)
+![License](https://img.shields.io/github/license/bgruszka/kuota-calc)
 
 > [!NOTE]
 > This is a fork of [postfinance/kuota-calc](https://github.com/postfinance/kuota-calc) that adds some features as the original doesn't seem to be maintained.
@@ -9,7 +9,7 @@
 
 # kuota-calc
 Simple utility to calculate the maximum needed resource quota for deployment(s). kuota-calc takes the
-deployment strategy, replicas and all containers into account, see [supported-resources](https://github.com/druppelt/kuota-calc#supported-k8s-resources) for a list of kubernetes resources which are currently supported by kuota-calc.
+deployment strategy, replicas and all containers into account, see [supported-resources](https://github.com/bgruszka/kuota-calc#supported-k8s-resources) for a list of kubernetes resources which are currently supported by kuota-calc.
 
 ## Motivation
 In shared environments such as kubernetes it is always a good idea to isolate/constrain different workloads to prevent them from interfering each other. Kubernetes provides [Resource Quotas](https://kubernetes.io/docs/concepts/policy/resource-quotas/) to limit compute, storage and object resources of namespaces.
@@ -60,7 +60,7 @@ Memory Limit: 3212Mi
 ```
 
 ## Installation
-Pre-compiled statically linked binaries are available on the [releases page](https://github.com/druppelt/kuota-calc/releases).
+Pre-compiled statically linked binaries are available on the [releases page](https://github.com/bgruszka/kuota-calc/releases).
 
 kuota-calc can either be used as a kubectl plugin or invoked directly. If you intend to use kuota-calc as
 a kubectl plugin, simply place the binary anywhere in `$PATH` named `kubectl-kuota_calc` with execute permissions.

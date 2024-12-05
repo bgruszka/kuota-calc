@@ -1,4 +1,4 @@
-module github.com/druppelt/kuota-calc
+module github.com/bgruszka/kuota-calc
 
 go 1.22.0
 
