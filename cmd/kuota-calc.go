@@ -50,11 +50,12 @@ type KuotaCalcOpts struct {
 	genericclioptions.IOStreams
 
 	// flags
-	debug       bool
-	detailed    bool
-	version     bool
-	maxRollouts int
-	json        bool
+	debug                              bool
+	detailed                           bool
+	version                            bool
+	maxRollouts                        int
+	json                               bool
+	suppressWarningForUnregisteredKind bool
 	// files    []string
 
 	versionInfo *Version
@@ -86,6 +87,7 @@ func NewKuotaCalcCmd(version *Version, streams genericclioptions.IOStreams) *cob
 	cmd.Flags().BoolVar(&opts.version, "version", false, "print version and exit")
 	cmd.Flags().IntVar(&opts.maxRollouts, "max-rollouts", -1, "limit the simultaneous rollout to the n most expensive rollouts per resource")
 	cmd.Flags().BoolVar(&opts.json, "json", false, "output to json")
+	cmd.Flags().BoolVar(&opts.suppressWarningForUnregisteredKind, "suppressWarningForUnregisteredKind", false, "suppress warning for unregistered kind")
 
 	return cmd
 }
@@ -121,7 +123,7 @@ func (opts *KuotaCalcOpts) run() error {
 			return fmt.Errorf("reading input: %w", err)
 		}
 
-		runtimeObject, kind, version, err := calc.ConvertToRuntimeObjectFromYaml(data)
+		runtimeObject, kind, version, err := calc.ConvertToRuntimeObjectFromYaml(data, opts.suppressWarningForUnregisteredKind)
 
 		horizontalPodAutoscaler, ok := runtimeObject.(*v2.HorizontalPodAutoscaler)
 
@@ -147,7 +149,7 @@ func (opts *KuotaCalcOpts) run() error {
 		if err != nil {
 			if errors.Is(err, calc.ErrResourceNotSupported) {
 				if opts.debug {
-					_, _ = fmt.Fprintf(opts.Out, "DEBUG: %s\n", err)
+					//	_, _ = fmt.Fprintf(opts.Out, "DEBUG: %s\n", err)
 				}
 
 				continue

@@ -713,7 +713,9 @@ spec:
 func TestResourceQuotaFromYaml(t *testing.T) {
 	r := require.New(t)
 
-	usage, err := ResourceQuotaFromYaml([]byte(service))
+	resourceObject, kind, version, _ := ConvertToRuntimeObjectFromYaml([]byte(service), false)
+
+	usage, err := ResourceQuotaFromYaml(ResourceObject{resourceObject, *kind, *version, nil})
 	r.Error(err)
 	r.True(errors.Is(err, ErrResourceNotSupported))
 	r.Nil(usage)
@@ -723,7 +725,9 @@ func TestResourceQuotaFromYaml(t *testing.T) {
 	r.True(errors.As(err, &calcErr))
 	r.Equal("calculating v1/Service resource usage: resource not supported", calcErr.Error())
 
-	usage, err = ResourceQuotaFromYaml([]byte(unsupportedOpenshiftRoute))
+	resourceObject, kind, version, _ = ConvertToRuntimeObjectFromYaml([]byte(unsupportedOpenshiftRoute), false)
+
+	usage, err = ResourceQuotaFromYaml(ResourceObject{resourceObject, *kind, *version, nil})
 	t.Log(err)
 	r.Error(err)
 	r.True(errors.Is(err, ErrResourceNotSupported))
