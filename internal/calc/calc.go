@@ -45,6 +45,7 @@ func (cErr CalculationError) Unwrap() error {
 	return cErr.err
 }
 
+// ResourceObject is a struct that contains a k8s object, its kind and version and an optional linked object.
 type ResourceObject struct {
 	Object       runtime.Object
 	Kind         string

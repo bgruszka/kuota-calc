@@ -48,7 +48,7 @@ type jsonOutputTotal struct {
 	MemoryLimit   string `json:"memoryLimit"`
 }
 
-type JsonOutput struct {
+type jsonOutput struct {
 	Resources []jsonResource  `json:"resources"`
 	Total     jsonOutputTotal `json:"total"`
 }
@@ -112,10 +112,25 @@ func (opts *KuotaCalcOpts) printVersion() error {
 }
 
 func (opts *KuotaCalcOpts) run() error {
-	var (
-		summary []*calc.ResourceUsage
-	)
+	summary, err := opts.readAndConvertYAML()
+	if err != nil {
+		return err
+	}
 
+	if !opts.json {
+		if opts.detailed {
+			opts.printDetailed(summary)
+		} else {
+			opts.printSummary(summary)
+		}
+	} else {
+		opts.printJSON(summary)
+	}
+
+	return nil
+}
+
+func (opts *KuotaCalcOpts) readAndConvertYAML() ([]*calc.ResourceUsage, error) {
 	yamlReader := yaml.NewYAMLReader(bufio.NewReader(opts.In))
 
 	hpas := []*v2.HorizontalPodAutoscaler{}
@@ -127,14 +142,15 @@ func (opts *KuotaCalcOpts) run() error {
 			if errors.Is(err, io.EOF) {
 				break
 			}
-
-			return fmt.Errorf("reading input: %w", err)
+			return nil, fmt.Errorf("reading input: %w", err)
 		}
 
 		runtimeObject, kind, version, err := calc.ConvertToRuntimeObjectFromYaml(data, opts.suppressWarningForUnregisteredKind)
+		if err != nil {
+			return nil, fmt.Errorf("converting to runtime object: %w", err)
+		}
 
 		horizontalPodAutoscaler, ok := runtimeObject.(*v2.HorizontalPodAutoscaler)
-
 		if ok {
 			hpas = append(hpas, horizontalPodAutoscaler)
 		}
@@ -142,9 +158,14 @@ func (opts *KuotaCalcOpts) run() error {
 		objects = append(objects, calc.ResourceObject{Object: runtimeObject, Kind: *kind, Version: *version})
 	}
 
+	return opts.processObjects(objects, hpas)
+}
+
+func (opts *KuotaCalcOpts) processObjects(objects []calc.ResourceObject, hpas []*v2.HorizontalPodAutoscaler) ([]*calc.ResourceUsage, error) {
+	summary := []*calc.ResourceUsage{}
+
 	for _, obj := range objects {
 		deployment, ok := obj.Object.(*appsv1.Deployment)
-
 		if ok {
 			for _, hpa := range hpas {
 				if hpa.Spec.ScaleTargetRef.Name == deployment.Name {
@@ -159,30 +180,19 @@ func (opts *KuotaCalcOpts) run() error {
 				if opts.debug {
 					_, _ = fmt.Fprintf(opts.Out, "DEBUG: %s\n", err)
 				}
-
 				continue
 			}
-
-			return err
+			return nil, err
 		}
 
 		summary = append(summary, usage)
 	}
 
-	if !opts.json {
-		if opts.detailed {
-			opts.printDetailed(summary)
-		} else {
-			opts.printSummary(summary)
-		}
-	} else {
-		opts.printJSON(summary)
-	}
-	return nil
+	return summary, nil
 }
 
 func (opts *KuotaCalcOpts) printJSON(usage []*calc.ResourceUsage) {
-	jsonOutput := JsonOutput{}
+	jsonOutput := jsonOutput{}
 
 	for _, u := range usage {
 		isHpa := false
