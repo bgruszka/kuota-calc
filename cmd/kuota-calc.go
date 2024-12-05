@@ -27,7 +27,7 @@ const (
     cat deployment.yaml | %[1]s --detailed`
 )
 
-type JsonResource struct {
+type jsonResource struct {
 	Version       string `json:"version"`
 	Kind          string `json:"kind"`
 	Name          string `json:"name"`
@@ -41,7 +41,7 @@ type JsonResource struct {
 	IsHPA         bool   `json:"isHPA"`
 }
 
-type JsonOutputTotal struct {
+type jsonOutputTotal struct {
 	CPURequest    string `json:"CPURequest"`
 	CPULimit      string `json:"CPULimit"`
 	MemoryRequest string `json:"memoryRequest"`
@@ -49,8 +49,8 @@ type JsonOutputTotal struct {
 }
 
 type JsonOutput struct {
-	Resources []JsonResource  `json:"resources"`
-	Total     JsonOutputTotal `json:"total"`
+	Resources []jsonResource  `json:"resources"`
+	Total     jsonOutputTotal `json:"total"`
 }
 
 // KuotaCalcOpts holds all command options.
@@ -176,12 +176,12 @@ func (opts *KuotaCalcOpts) run() error {
 			opts.printSummary(summary)
 		}
 	} else {
-		opts.printJson(summary)
+		opts.printJSON(summary)
 	}
 	return nil
 }
 
-func (opts *KuotaCalcOpts) printJson(usage []*calc.ResourceUsage) {
+func (opts *KuotaCalcOpts) printJSON(usage []*calc.ResourceUsage) {
 	jsonOutput := JsonOutput{}
 
 	for _, u := range usage {
@@ -190,7 +190,7 @@ func (opts *KuotaCalcOpts) printJson(usage []*calc.ResourceUsage) {
 			isHpa = true
 		}
 
-		jsonOutput.Resources = append(jsonOutput.Resources, JsonResource{
+		jsonOutput.Resources = append(jsonOutput.Resources, jsonResource{
 			Version:       u.Details.Version,
 			Kind:          u.Details.Kind,
 			Name:          u.Details.Name,
@@ -266,14 +266,10 @@ func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
 func (opts *KuotaCalcOpts) printSummary(usage []*calc.ResourceUsage) {
 	totalResources := calc.Total(opts.maxRollouts, usage)
 
-	if !opts.json {
-		_, _ = fmt.Fprintf(opts.Out, "CPU Request: %s\nCPU Limit: %s\nMemory Request: %s\nMemory Limit: %s\n",
-			totalResources.CPUMin.String(),
-			totalResources.CPUMax.String(),
-			totalResources.MemoryMin.String(),
-			totalResources.MemoryMax.String(),
-		)
-	} else {
-
-	}
+	_, _ = fmt.Fprintf(opts.Out, "CPU Request: %s\nCPU Limit: %s\nMemory Request: %s\nMemory Limit: %s\n",
+		totalResources.CPUMin.String(),
+		totalResources.CPUMax.String(),
+		totalResources.MemoryMin.String(),
+		totalResources.MemoryMax.String(),
+	)
 }
