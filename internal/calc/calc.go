@@ -246,11 +246,7 @@ func Total(maxRollout int, usage []*ResourceUsage) Resources {
 	}
 }
 
-func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregisteredKind bool) (runtime.Object, *string, *string, error) {
-	var version string
-
-	var kind string
-
+func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregisteredKind bool) (object runtime.Object, kind *string, version *string, err error) {
 	combinedScheme := runtime.NewScheme()
 	_ = scheme.AddToScheme(combinedScheme)
 	_ = openshiftScheme.AddToScheme(combinedScheme)
@@ -269,18 +265,18 @@ func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregiste
 			unknown := runtime.Unknown{Raw: yamlData}
 
 			if _, gvk1, err := decoder.Decode(yamlData, nil, &unknown); err == nil {
-				kind = gvk1.Kind
-				version = gvk1.Version
+				kind = &gvk1.Kind
+				version = &gvk1.Version
 			}
 		} else {
 			return nil, nil, nil, fmt.Errorf("decoding yaml data: %w", err)
 		}
 	} else {
-		kind = gvk.Kind
-		version = gvk.Version
+		kind = &gvk.Kind
+		version = &gvk.Version
 	}
 
-	return object, &kind, &version, nil
+	return object, kind, version, nil
 }
 
 // ResourceQuotaFromYaml decodes a single yaml document into a k8s object. Then performs a type assertion
