@@ -82,6 +82,7 @@ Currently supported:
 - batch/v1 CronJob
 - batch/v1 Job
 - v1 Pod
+- autoscaling/v2 HorizontalPodAutoscaler
 
 ## known limitation
 - CronJobs: the cron concurrencyPolicy is not considered, a CronJob is treated as a single Pod (#18)
