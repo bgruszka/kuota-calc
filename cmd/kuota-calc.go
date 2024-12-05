@@ -6,12 +6,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	appsv1 "k8s.io/api/apps/v1"
-	v2 "k8s.io/api/autoscaling/v2"
-	"k8s.io/apimachinery/pkg/util/json"
 	"log"
 	"runtime"
 	"text/tabwriter"
+
+	appsv1 "k8s.io/api/apps/v1"
+	v2 "k8s.io/api/autoscaling/v2"
+	"k8s.io/apimachinery/pkg/util/json"
 
 	"github.com/druppelt/kuota-calc/internal/calc"
 	"github.com/spf13/cobra"

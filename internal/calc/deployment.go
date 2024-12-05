@@ -3,8 +3,9 @@ package calc
 import (
 	"errors"
 	"fmt"
-	v2 "k8s.io/api/autoscaling/v2"
 	"math"
+
+	v2 "k8s.io/api/autoscaling/v2"
 
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
