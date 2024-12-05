@@ -142,6 +142,7 @@ func (opts *KuotaCalcOpts) readAndConvertYAML() ([]*calc.ResourceUsage, error) {
 			if errors.Is(err, io.EOF) {
 				break
 			}
+
 			return nil, fmt.Errorf("reading input: %w", err)
 		}
 
@@ -180,8 +181,10 @@ func (opts *KuotaCalcOpts) processObjects(objects []calc.ResourceObject, hpas []
 				if opts.debug {
 					_, _ = fmt.Fprintf(opts.Out, "DEBUG: %s\n", err)
 				}
+
 				continue
 			}
+
 			return nil, err
 		}
 
