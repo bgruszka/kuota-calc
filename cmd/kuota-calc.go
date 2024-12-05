@@ -149,7 +149,7 @@ func (opts *KuotaCalcOpts) run() error {
 		if err != nil {
 			if errors.Is(err, calc.ErrResourceNotSupported) {
 				if opts.debug {
-					//	_, _ = fmt.Fprintf(opts.Out, "DEBUG: %s\n", err)
+					_, _ = fmt.Fprintf(opts.Out, "DEBUG: %s\n", err)
 				}
 
 				continue
