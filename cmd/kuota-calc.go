@@ -41,8 +41,16 @@ type JsonResource struct {
 	IsHPA         bool   `json:"isHPA"`
 }
 
+type JsonOutputTotal struct {
+	CPURequest    string `json:"CPURequest"`
+	CPULimit      string `json:"CPULimit"`
+	MemoryRequest string `json:"memoryRequest"`
+	MemoryLimit   string `json:"memoryLimit"`
+}
+
 type JsonOutput struct {
-	Resources []JsonResource `json:"resources"`
+	Resources []JsonResource  `json:"resources"`
+	Total     JsonOutputTotal `json:"total"`
 }
 
 // KuotaCalcOpts holds all command options.
@@ -161,95 +169,112 @@ func (opts *KuotaCalcOpts) run() error {
 		summary = append(summary, usage)
 	}
 
-	if opts.detailed {
-		opts.printDetailed(summary)
+	if !opts.json {
+		if opts.detailed {
+			opts.printDetailed(summary)
+		} else {
+			opts.printSummary(summary)
+		}
 	} else {
-		opts.printSummary(summary)
+		opts.printJson(summary)
 	}
-
 	return nil
 }
 
-func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
-	if !opts.json {
-		w := tabwriter.NewWriter(opts.Out, 0, 0, 4, ' ', tabwriter.TabIndent)
+func (opts *KuotaCalcOpts) printJson(usage []*calc.ResourceUsage) {
+	jsonOutput := JsonOutput{}
 
-		_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\tIsHPA\t\n")
-
-		for _, u := range usage {
-			isHpa := "false"
-			if u.Details.Hpa {
-				isHpa = "true"
-			}
-
-			_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
-				u.Details.Version,
-				u.Details.Kind,
-				u.Details.Name,
-				u.Details.Replicas,
-				u.Details.Strategy,
-				u.Details.MaxReplicas,
-				u.RolloutResources.CPUMin.String(),
-				u.RolloutResources.CPUMax.String(),
-				u.RolloutResources.MemoryMin.String(),
-				u.RolloutResources.MemoryMax.String(),
-				isHpa,
-			)
+	for _, u := range usage {
+		isHpa := false
+		if u.Details.Hpa {
+			isHpa = true
 		}
 
-		if err := w.Flush(); err != nil {
-			_, _ = fmt.Fprintf(opts.Out, "printing detailed resources to tabwriter failed: %v\n", err)
-		}
-
-		if opts.maxRollouts > -1 {
-			_, _ = fmt.Fprintf(opts.Out, "\nTable assuming simultaneous rollout of all resources\n")
-			_, _ = fmt.Fprintf(opts.Out, "Total assuming simultaneous rollout of %d resources\n", opts.maxRollouts)
-		} else {
-			_, _ = fmt.Fprintf(opts.Out, "\nTable and Total assuming simultaneous rollout of all resources\n")
-		}
-
-		_, _ = fmt.Fprintf(opts.Out, "\nTotal\n")
-
-		opts.printSummary(usage)
-	} else {
-		jsonOutput := JsonOutput{}
-		jsonItems := []JsonResource{}
-
-		for _, u := range usage {
-			jsonItems = append(jsonItems, JsonResource{
-				Version:       u.Details.Version,
-				Kind:          u.Details.Kind,
-				Name:          u.Details.Name,
-				Replicas:      u.Details.Replicas,
-				Strategy:      u.Details.Strategy,
-				MaxReplicas:   u.Details.MaxReplicas,
-				CPURequest:    u.RolloutResources.CPUMin.String(),
-				CPULimit:      u.RolloutResources.CPUMax.String(),
-				MemoryRequest: u.RolloutResources.MemoryMin.String(),
-				MemoryLimit:   u.RolloutResources.MemoryMax.String(),
-				IsHPA:         u.Details.Hpa,
-			})
-		}
-
-		jsonOutput.Resources = jsonItems
-
-		marshaled, err := json.Marshal(jsonOutput)
-
-		if err != nil {
-			log.Fatalf("marshaling error: %s", err)
-		}
-
-		_, _ = fmt.Fprintln(opts.Out, string(marshaled))
+		jsonOutput.Resources = append(jsonOutput.Resources, JsonResource{
+			Version:       u.Details.Version,
+			Kind:          u.Details.Kind,
+			Name:          u.Details.Name,
+			Replicas:      u.Details.Replicas,
+			Strategy:      u.Details.Strategy,
+			MaxReplicas:   u.Details.MaxReplicas,
+			CPURequest:    u.RolloutResources.CPUMin.String(),
+			CPULimit:      u.RolloutResources.CPUMax.String(),
+			MemoryRequest: u.RolloutResources.MemoryMin.String(),
+			MemoryLimit:   u.RolloutResources.MemoryMax.String(),
+			IsHPA:         isHpa,
+		})
 	}
+
+	totalResources := calc.Total(opts.maxRollouts, usage)
+
+	jsonOutput.Total.CPURequest = totalResources.CPUMin.String()
+	jsonOutput.Total.CPULimit = totalResources.CPUMax.String()
+	jsonOutput.Total.MemoryRequest = totalResources.MemoryMin.String()
+	jsonOutput.Total.MemoryLimit = totalResources.MemoryMax.String()
+
+	marshaled, err := json.Marshal(jsonOutput)
+
+	if err != nil {
+		log.Fatalf("marshaling error: %s", err)
+	}
+
+	_, _ = fmt.Fprintln(opts.Out, string(marshaled))
+}
+
+func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
+	w := tabwriter.NewWriter(opts.Out, 0, 0, 4, ' ', tabwriter.TabIndent)
+
+	_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\tIsHPA\t\n")
+
+	for _, u := range usage {
+		isHpa := "false"
+		if u.Details.Hpa {
+			isHpa = "true"
+		}
+
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
+			u.Details.Version,
+			u.Details.Kind,
+			u.Details.Name,
+			u.Details.Replicas,
+			u.Details.Strategy,
+			u.Details.MaxReplicas,
+			u.RolloutResources.CPUMin.String(),
+			u.RolloutResources.CPUMax.String(),
+			u.RolloutResources.MemoryMin.String(),
+			u.RolloutResources.MemoryMax.String(),
+			isHpa,
+		)
+	}
+
+	if err := w.Flush(); err != nil {
+		_, _ = fmt.Fprintf(opts.Out, "printing detailed resources to tabwriter failed: %v\n", err)
+	}
+
+	if opts.maxRollouts > -1 {
+		_, _ = fmt.Fprintf(opts.Out, "\nTable assuming simultaneous rollout of all resources\n")
+		_, _ = fmt.Fprintf(opts.Out, "Total assuming simultaneous rollout of %d resources\n", opts.maxRollouts)
+	} else {
+		_, _ = fmt.Fprintf(opts.Out, "\nTable and Total assuming simultaneous rollout of all resources\n")
+	}
+
+	_, _ = fmt.Fprintf(opts.Out, "\nTotal\n")
+
+	opts.printSummary(usage)
+
 }
 
 func (opts *KuotaCalcOpts) printSummary(usage []*calc.ResourceUsage) {
 	totalResources := calc.Total(opts.maxRollouts, usage)
 
-	_, _ = fmt.Fprintf(opts.Out, "CPU Request: %s\nCPU Limit: %s\nMemory Request: %s\nMemory Limit: %s\n",
-		totalResources.CPUMin.String(),
-		totalResources.CPUMax.String(),
-		totalResources.MemoryMin.String(),
-		totalResources.MemoryMax.String(),
-	)
+	if !opts.json {
+		_, _ = fmt.Fprintf(opts.Out, "CPU Request: %s\nCPU Limit: %s\nMemory Request: %s\nMemory Limit: %s\n",
+			totalResources.CPUMin.String(),
+			totalResources.CPUMax.String(),
+			totalResources.MemoryMin.String(),
+			totalResources.MemoryMax.String(),
+		)
+	} else {
+
+	}
 }
