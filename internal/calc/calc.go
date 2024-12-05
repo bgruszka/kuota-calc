@@ -4,12 +4,12 @@ package calc
 import (
 	"errors"
 	"fmt"
+	"github.com/rs/zerolog/log"
 	v2 "k8s.io/api/autoscaling/v2"
 	"slices"
 
 	openshiftAppsV1 "github.com/openshift/api/apps/v1"
 	openshiftScheme "github.com/openshift/client-go/apps/clientset/versioned/scheme"
-	"github.com/rs/zerolog/log"
 	appsv1 "k8s.io/api/apps/v1"
 	batchV1 "k8s.io/api/batch/v1"
 	v1 "k8s.io/api/core/v1"
@@ -245,7 +245,7 @@ func Total(maxRollout int, usage []*ResourceUsage) Resources {
 	}
 }
 
-func ConvertToRuntimeObjectFromYaml(yamlData []byte) (runtime.Object, *string, *string, error) {
+func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregisteredKind bool) (runtime.Object, *string, *string, error) {
 	var version string
 
 	var kind string
@@ -261,7 +261,9 @@ func ConvertToRuntimeObjectFromYaml(yamlData []byte) (runtime.Object, *string, *
 	if err != nil {
 		// when the kind is not found, I just warn and skip
 		if runtime.IsNotRegisteredError(err) {
-			log.Warn().Msg(err.Error())
+			if !suppressWarningForUnregisteredKind {
+				log.Warn().Msg(err.Error())
+			}
 
 			unknown := runtime.Unknown{Raw: yamlData}
 
