@@ -246,7 +246,7 @@ func Total(maxRollout int, usage []*ResourceUsage) Resources {
 	}
 }
 
-func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregisteredKind bool) (object runtime.Object, kind *string, version *string, err error) {
+func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregisteredKind bool) (object runtime.Object, kind, version *string, err error) {
 	combinedScheme := runtime.NewScheme()
 	_ = scheme.AddToScheme(combinedScheme)
 	_ = openshiftScheme.AddToScheme(combinedScheme)
