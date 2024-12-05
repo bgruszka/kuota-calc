@@ -5,13 +5,15 @@ import (
 	"fmt"
 	"math"
 
+	v2 "k8s.io/api/autoscaling/v2"
+
 	appsv1 "k8s.io/api/apps/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 )
 
 // calculates the cpu/memory resources a single deployment needs. Replicas and the deployment
 // strategy are taken into account.
-func deployment(deployment appsv1.Deployment) (*ResourceUsage, error) { //nolint:funlen // disable function length linting
+func deployment(deployment appsv1.Deployment, hpa *v2.HorizontalPodAutoscaler) (*ResourceUsage, error) { //nolint:funlen // disable function length linting
 	var (
 		maxUnavailable      int32 // max amount of unavailable pods during a deployment
 		maxSurge            int32 // max amount of pods that are allowed in addition to replicas during deployment
@@ -21,6 +23,14 @@ func deployment(deployment appsv1.Deployment) (*ResourceUsage, error) { //nolint
 	)
 
 	replicas := deployment.Spec.Replicas
+
+	isHpa := false
+
+	if hpa != nil {
+		replicas = &hpa.Spec.MaxReplicas
+		isHpa = true
+	}
+
 	strategy := deployment.Spec.Strategy
 
 	if *replicas == 0 {
@@ -118,6 +128,7 @@ func deployment(deployment appsv1.Deployment) (*ResourceUsage, error) { //nolint
 			Replicas:    *replicas,
 			Strategy:    string(strategy.Type),
 			MaxReplicas: *replicas + maxSurge,
+			Hpa:         isHpa,
 		},
 	}
 

@@ -37,7 +37,9 @@ func TestDaemonSet(t *testing.T) {
 			test.name, func(t *testing.T) {
 				r := require.New(t)
 
-				usage, err := ResourceQuotaFromYaml([]byte(test.daemonset))
+				resourceObject, kind, version, _ := ConvertToRuntimeObjectFromYaml([]byte(test.daemonset), false)
+
+				usage, err := ResourceQuotaFromYaml(ResourceObject{resourceObject, *kind, *version, nil})
 				r.NoError(err)
 				r.NotEmpty(usage)
 

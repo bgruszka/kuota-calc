@@ -6,10 +6,15 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"runtime"
 	"text/tabwriter"
 
-	"github.com/druppelt/kuota-calc/internal/calc"
+	appsv1 "k8s.io/api/apps/v1"
+	v2 "k8s.io/api/autoscaling/v2"
+	"k8s.io/apimachinery/pkg/util/json"
+
+	"github.com/bgruszka/kuota-calc/internal/calc"
 	"github.com/spf13/cobra"
 	"k8s.io/apimachinery/pkg/util/yaml"
 	"k8s.io/cli-runtime/pkg/genericclioptions"
@@ -23,15 +28,43 @@ const (
     cat deployment.yaml | %[1]s --detailed`
 )
 
+type jsonResource struct {
+	Version       string `json:"version"`
+	Kind          string `json:"kind"`
+	Name          string `json:"name"`
+	Replicas      int32  `json:"replicas"`
+	Strategy      string `json:"strategy"`
+	MaxReplicas   int32  `json:"maxReplicas"`
+	CPURequest    string `json:"CPURequest"`
+	CPULimit      string `json:"CPULimit"`
+	MemoryRequest string `json:"memoryRequest"`
+	MemoryLimit   string `json:"memoryLimit"`
+	IsHPA         bool   `json:"isHPA"`
+}
+
+type jsonOutputTotal struct {
+	CPURequest    string `json:"CPURequest"`
+	CPULimit      string `json:"CPULimit"`
+	MemoryRequest string `json:"memoryRequest"`
+	MemoryLimit   string `json:"memoryLimit"`
+}
+
+type jsonOutput struct {
+	Resources []jsonResource  `json:"resources"`
+	Total     jsonOutputTotal `json:"total"`
+}
+
 // KuotaCalcOpts holds all command options.
 type KuotaCalcOpts struct {
 	genericclioptions.IOStreams
 
 	// flags
-	debug       bool
-	detailed    bool
-	version     bool
-	maxRollouts int
+	debug                              bool
+	detailed                           bool
+	version                            bool
+	maxRollouts                        int
+	json                               bool
+	suppressWarningForUnregisteredKind bool
 	// files    []string
 
 	versionInfo *Version
@@ -62,6 +95,8 @@ func NewKuotaCalcCmd(version *Version, streams genericclioptions.IOStreams) *cob
 	cmd.Flags().BoolVar(&opts.detailed, "detailed", false, "enable detailed output")
 	cmd.Flags().BoolVar(&opts.version, "version", false, "print version and exit")
 	cmd.Flags().IntVar(&opts.maxRollouts, "max-rollouts", -1, "limit the simultaneous rollout to the n most expensive rollouts per resource")
+	cmd.Flags().BoolVar(&opts.json, "json", false, "output to json")
+	cmd.Flags().BoolVar(&opts.suppressWarningForUnregisteredKind, "suppressWarningForUnregisteredKind", false, "suppress warning for unregistered kind")
 
 	return cmd
 }
@@ -78,11 +113,29 @@ func (opts *KuotaCalcOpts) printVersion() error {
 }
 
 func (opts *KuotaCalcOpts) run() error {
-	var (
-		summary []*calc.ResourceUsage
-	)
+	summary, err := opts.readAndConvertYAML()
+	if err != nil {
+		return err
+	}
 
+	if !opts.json {
+		if opts.detailed {
+			opts.printDetailed(summary)
+		} else {
+			opts.printSummary(summary)
+		}
+	} else {
+		opts.printJSON(summary)
+	}
+
+	return nil
+}
+
+func (opts *KuotaCalcOpts) readAndConvertYAML() ([]*calc.ResourceUsage, error) {
 	yamlReader := yaml.NewYAMLReader(bufio.NewReader(opts.In))
+
+	hpas := []*v2.HorizontalPodAutoscaler{}
+	objects := []calc.ResourceObject{}
 
 	for {
 		data, err := yamlReader.Read()
@@ -91,10 +144,39 @@ func (opts *KuotaCalcOpts) run() error {
 				break
 			}
 
-			return fmt.Errorf("reading input: %w", err)
+			return nil, fmt.Errorf("reading input: %w", err)
 		}
 
-		usage, err := calc.ResourceQuotaFromYaml(data)
+		runtimeObject, kind, version, err := calc.ConvertToRuntimeObjectFromYaml(data, opts.suppressWarningForUnregisteredKind)
+		if err != nil {
+			return nil, fmt.Errorf("converting to runtime object: %w", err)
+		}
+
+		horizontalPodAutoscaler, ok := runtimeObject.(*v2.HorizontalPodAutoscaler)
+		if ok {
+			hpas = append(hpas, horizontalPodAutoscaler)
+		}
+
+		objects = append(objects, calc.ResourceObject{Object: runtimeObject, Kind: *kind, Version: *version})
+	}
+
+	return opts.processObjects(objects, hpas)
+}
+
+func (opts *KuotaCalcOpts) processObjects(objects []calc.ResourceObject, hpas []*v2.HorizontalPodAutoscaler) ([]*calc.ResourceUsage, error) {
+	summary := []*calc.ResourceUsage{}
+
+	for _, obj := range objects {
+		deployment, ok := obj.Object.(*appsv1.Deployment)
+		if ok {
+			for _, hpa := range hpas {
+				if hpa.Spec.ScaleTargetRef.Name == deployment.Name {
+					obj.LinkedObject = hpa
+				}
+			}
+		}
+
+		usage, err := calc.ResourceQuotaFromYaml(obj)
 		if err != nil {
 			if errors.Is(err, calc.ErrResourceNotSupported) {
 				if opts.debug {
@@ -104,28 +186,67 @@ func (opts *KuotaCalcOpts) run() error {
 				continue
 			}
 
-			return err
+			return nil, err
 		}
 
 		summary = append(summary, usage)
 	}
 
-	if opts.detailed {
-		opts.printDetailed(summary)
-	} else {
-		opts.printSummary(summary)
+	return summary, nil
+}
+
+func (opts *KuotaCalcOpts) printJSON(usage []*calc.ResourceUsage) {
+	jsonOutput := jsonOutput{}
+
+	for _, u := range usage {
+		isHpa := false
+		if u.Details.Hpa {
+			isHpa = true
+		}
+
+		jsonOutput.Resources = append(jsonOutput.Resources, jsonResource{
+			Version:       u.Details.Version,
+			Kind:          u.Details.Kind,
+			Name:          u.Details.Name,
+			Replicas:      u.Details.Replicas,
+			Strategy:      u.Details.Strategy,
+			MaxReplicas:   u.Details.MaxReplicas,
+			CPURequest:    u.RolloutResources.CPUMin.String(),
+			CPULimit:      u.RolloutResources.CPUMax.String(),
+			MemoryRequest: u.RolloutResources.MemoryMin.String(),
+			MemoryLimit:   u.RolloutResources.MemoryMax.String(),
+			IsHPA:         isHpa,
+		})
 	}
 
-	return nil
+	totalResources := calc.Total(opts.maxRollouts, usage)
+
+	jsonOutput.Total.CPURequest = totalResources.CPUMin.String()
+	jsonOutput.Total.CPULimit = totalResources.CPUMax.String()
+	jsonOutput.Total.MemoryRequest = totalResources.MemoryMin.String()
+	jsonOutput.Total.MemoryLimit = totalResources.MemoryMax.String()
+
+	marshaled, err := json.Marshal(jsonOutput)
+
+	if err != nil {
+		log.Fatalf("marshaling error: %s", err)
+	}
+
+	_, _ = fmt.Fprintln(opts.Out, string(marshaled))
 }
 
 func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
 	w := tabwriter.NewWriter(opts.Out, 0, 0, 4, ' ', tabwriter.TabIndent)
 
-	_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\t\n")
+	_, _ = fmt.Fprintf(w, "Version\tKind\tName\tReplicas\tStrategy\tMaxReplicas\tCPURequest\tCPULimit\tMemoryRequest\tMemoryLimit\tIsHPA\t\n")
 
 	for _, u := range usage {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t\n",
+		isHpa := "false"
+		if u.Details.Hpa {
+			isHpa = "true"
+		}
+
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%d\t%s\t%d\t%s\t%s\t%s\t%s\t%s\t\n",
 			u.Details.Version,
 			u.Details.Kind,
 			u.Details.Name,
@@ -136,6 +257,7 @@ func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
 			u.RolloutResources.CPUMax.String(),
 			u.RolloutResources.MemoryMin.String(),
 			u.RolloutResources.MemoryMax.String(),
+			isHpa,
 		)
 	}
 
