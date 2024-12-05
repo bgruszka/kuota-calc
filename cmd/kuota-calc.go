@@ -261,7 +261,6 @@ func (opts *KuotaCalcOpts) printDetailed(usage []*calc.ResourceUsage) {
 	_, _ = fmt.Fprintf(opts.Out, "\nTotal\n")
 
 	opts.printSummary(usage)
-
 }
 
 func (opts *KuotaCalcOpts) printSummary(usage []*calc.ResourceUsage) {
