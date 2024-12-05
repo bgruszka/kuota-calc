@@ -246,6 +246,7 @@ func Total(maxRollout int, usage []*ResourceUsage) Resources {
 	}
 }
 
+// ConvertToRuntimeObjectFromYaml decodes a yaml document into a k8s object. If the kind is not found, it will display a warning.
 func ConvertToRuntimeObjectFromYaml(yamlData []byte, suppressWarningForUnregisteredKind bool) (object runtime.Object, kind, version *string, err error) {
 	combinedScheme := runtime.NewScheme()
 	_ = scheme.AddToScheme(combinedScheme)
