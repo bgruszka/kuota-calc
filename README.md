@@ -4,8 +4,10 @@
 ![License](https://img.shields.io/github/license/bgruszka/kuota-calc)
 
 > [!NOTE]
-> This is a fork of [postfinance/kuota-calc](https://github.com/postfinance/kuota-calc) that adds some features as the original doesn't seem to be maintained.
-> But neither will this. After I added what I need, I will stop development as well. Feel free to fork as well :)
+> This is a fork of [druppelt/kuota-calc](https://github.com/druppelt/kuota-calc) that adds some features:
+> * added support for HorizontalPodAutoscaler
+> * added JSON output format
+> * added suppression of warning about unsupported kinds
 
 # kuota-calc
 Simple utility to calculate the maximum needed resource quota for deployment(s). kuota-calc takes the
