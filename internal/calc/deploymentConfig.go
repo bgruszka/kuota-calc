@@ -15,9 +15,12 @@ func deploymentConfig(deploymentConfig openshiftAppsV1.DeploymentConfig) (*Resou
 	var (
 		maxUnavailable      int32 // max amount of unavailable pods during a deployment
 		maxSurge            int32 // max amount of pods that are allowed in addition to replicas during deployment
-		maxNonReadyPodCount int32 // max pods that are not ready during deployment,
+		maxNonReadyPodCount int32 // max new pods that are not ready during deployment,
 		//  so either running init containers or already running normal containers,
 		//  but probes haven't succeeded yet
+		terminatingPodCount int32 // max old pods that may still be in Terminating state
+		//  and therefore still consume ResourceQuota while the controller already
+		//  treats them as gone.
 	)
 
 	replicas := deploymentConfig.Spec.Replicas
@@ -44,6 +47,8 @@ func deploymentConfig(deploymentConfig openshiftAppsV1.DeploymentConfig) (*Resou
 		maxNonReadyPodCount = replicas
 		maxUnavailable = replicas
 		maxSurge = 0
+		// Recreate waits for the old pods to fully terminate before scaling the new RS up.
+		terminatingPodCount = 0
 	case "":
 		// Rolling is the default and can be an empty string. If so, set the defaults
 		// (https://pkg.go.dev/k8s.io/api/apps/v1?tab=doc#RollingUpdateDeployment) and continue calculation.
@@ -98,15 +103,19 @@ func deploymentConfig(deploymentConfig openshiftAppsV1.DeploymentConfig) (*Resou
 
 		maxSurge = int32(maxSurgeInt)
 
-		// maxNonReadyPodCount is the max number of pods potentially in init phase during a deployment
+		// maxNonReadyPodCount is the max number of new pods potentially in init phase during a deployment
 		maxNonReadyPodCount = maxSurge + maxUnavailable
+		// During a rolling update the controller can scale down the old RS by maxUnavailable
+		// pods and immediately create their replacements, even though the original pods are
+		// still in Terminating state and continue to occupy ResourceQuota.
+		terminatingPodCount = maxUnavailable
 	default:
 		return nil, fmt.Errorf("deploymentConfig: %s deploymentConfig strategy %q is unknown", deploymentConfig.Name, strategy.Type)
 	}
 
 	podResources := calcPodResources(&deploymentConfig.Spec.Template.Spec)
 	strategyResources := ConvertToResources(&deploymentConfig.Spec.Strategy.Resources)
-	rolloutResources := podResources.Containers.MulInt32(replicas - maxUnavailable).Add(podResources.MaxResources.MulInt32(maxNonReadyPodCount)).Add(strategyResources)
+	rolloutResources := podResources.Containers.MulInt32(replicas - maxUnavailable + terminatingPodCount).Add(podResources.MaxResources.MulInt32(maxNonReadyPodCount)).Add(strategyResources)
 	normalResources := podResources.Containers.MulInt32(replicas)
 
 	resourceUsage := ResourceUsage{

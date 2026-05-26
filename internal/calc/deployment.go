@@ -17,9 +17,12 @@ func deployment(deployment appsv1.Deployment, hpa *v2.HorizontalPodAutoscaler) (
 	var (
 		maxUnavailable      int32 // max amount of unavailable pods during a deployment
 		maxSurge            int32 // max amount of pods that are allowed in addition to replicas during deployment
-		maxNonReadyPodCount int32 // max pods that are not ready during deployment,
+		maxNonReadyPodCount int32 // max new pods that are not ready during deployment,
 		//  so either running init containers or already running normal containers,
 		//  but probes haven't succeeded yet
+		terminatingPodCount int32 // max old pods that may still be in Terminating state
+		//  and therefore still consume ResourceQuota while the controller already
+		//  treats them as gone (see kubernetes/kubernetes#22282).
 	)
 
 	replicas := deployment.Spec.Replicas
@@ -54,6 +57,9 @@ func deployment(deployment appsv1.Deployment, hpa *v2.HorizontalPodAutoscaler) (
 		maxNonReadyPodCount = *replicas
 		maxUnavailable = *replicas
 		maxSurge = 0
+		// Recreate waits for the old ReplicaSet's Status.Replicas to drop to 0 before
+		// scaling up the new one, so old terminating pods don't overlap with new ones.
+		terminatingPodCount = 0
 	case "":
 		// RollingUpdate is the default and can be an empty string. If so, set the defaults
 		// (https://pkg.go.dev/k8s.io/api/apps/v1?tab=doc#RollingUpdateDeployment) and continue calculation.
@@ -108,14 +114,18 @@ func deployment(deployment appsv1.Deployment, hpa *v2.HorizontalPodAutoscaler) (
 
 		maxSurge = int32(maxSurgeInt)
 
-		// maxNonReadyPodCount is the max number of pods potentially in init phase during a deployment
+		// maxNonReadyPodCount is the max number of new pods potentially in init phase during a deployment
 		maxNonReadyPodCount = maxSurge + maxUnavailable
+		// During a rolling update the controller can scale down the old RS by maxUnavailable
+		// pods and immediately create their replacements, even though the original pods are
+		// still in Terminating state and continue to occupy ResourceQuota.
+		terminatingPodCount = maxUnavailable
 	default:
 		return nil, fmt.Errorf("deployment: %s deployment strategy %q is unknown", deployment.Name, strategy.Type)
 	}
 
 	podResources := calcPodResources(&deployment.Spec.Template.Spec)
-	rolloutResources := podResources.Containers.MulInt32(*replicas - maxUnavailable).Add(podResources.MaxResources.MulInt32(maxNonReadyPodCount))
+	rolloutResources := podResources.Containers.MulInt32(*replicas - maxUnavailable + terminatingPodCount).Add(podResources.MaxResources.MulInt32(maxNonReadyPodCount))
 	normalResources := podResources.Containers.MulInt32(*replicas)
 
 	resourceUsage := ResourceUsage{

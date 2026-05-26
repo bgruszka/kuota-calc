@@ -352,6 +352,45 @@ spec:
       securityContext: {}
       terminationGracePeriodSeconds: 30`
 
+// rollingUpdateWithTerminatingOverlap exercises the case where maxUnavailable > 0 so the
+// controller may have old pods still in Terminating state (and therefore still in quota)
+// while the maxSurge + maxUnavailable replacement pods are already starting up.
+var rollingUpdateWithTerminatingOverlap = `---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: overlap
+  name: overlap
+spec:
+  replicas: 10
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app: overlap
+  strategy:
+    rollingUpdate:
+      maxSurge: 2
+      maxUnavailable: 2
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app: overlap
+    spec:
+      containers:
+        - image: myapp:v1.0.7
+          imagePullPolicy: IfNotPresent
+          name: overlap
+          resources:
+            limits:
+              cpu: '1'
+              memory: 4Gi
+            requests:
+              cpu: '250m'
+              memory: 2Gi
+      terminationGracePeriodSeconds: 30`
+
 var deploymentWithoutValues = `---
 apiVersion: apps/v1
 kind: Deployment

@@ -19,29 +19,33 @@ In shared environments such as kubernetes it is always a good idea to isolate/co
 Calculating the needed compute resources can be a bit challenging (especially with large and complex deployments) because we must respect certain settings/defaults like the deployment strategy, number of replicas and so on. This is where kuota-calc can help you, it calculates the maximum needed resource quota in order to be able to start a deployment of all resources at the same time by respecting deployment strategies, replicas and so on.
 
 ## Example
-Get a detailed report of all resources, their max required quota and a total. 
+Get a detailed report of all resources, their max required quota and a total.
+The Deployment in `examples/deployment.yaml` has an attached HPA with `maxReplicas: 50`,
+so the rollout calculation uses 50 (not the Deployment's `spec.replicas: 10`) as the
+base. The reservation also covers up to `maxUnavailable` pods that may still be in
+Terminating state while the controller is already scheduling their replacements.
 ```bash
-$ cat examples/deployment.yaml | kuota-calc -detailed
-Version    Kind           Name     Replicas    Strategy         MaxReplicas    CPURequest    CPULimit    MemoryRequest    MemoryLimit    
-apps/v1    Deployment     myapp    10          RollingUpdate    13             3250m         6500m       832Mi            3328Mi         
-apps/v1    StatefulSet    myapp    3           RollingUpdate    3              750m          3           6Gi              12Gi           
+$ cat examples/deployment.yaml | kuota-calc --detailed
+Version    Kind           Name     Replicas    Strategy         MaxReplicas    CPURequest    CPULimit    MemoryRequest    MemoryLimit    IsHPA    
+apps/v1    Deployment     myapp    50          RollingUpdate    63             18750m        37500m      4800Mi           19200Mi        true     
+apps/v1    StatefulSet    myapp    3           RollingUpdate    3              750m          3           6Gi              12Gi           false    
 
 Table and Total assuming simultaneous rollout of all resources
 
 Total
-CPU Request: 4
-CPU Limit: 9500m
-Memory Request: 6976Mi
-Memory Limit: 15616Mi
+CPU Request: 19500m
+CPU Limit: 40500m
+Memory Request: 10944Mi
+Memory Limit: 31488Mi
 ```
 
 For comparison, here the simultaneous rollout is limited to zero resources, so you get the required quotas to just run, but not deploy the applications. 
 ````bash
 $ cat examples/deployment.yaml | kuota-calc --max-rollouts=0
-CPU Request: 3250m
-CPU Limit: 8
-Memory Request: 6784Mi
-Memory Limit: 14848Mi
+CPU Request: 13250m
+CPU Limit: 28
+Memory Request: 9344Mi
+Memory Limit: 25088Mi
 ````
 
 To calc usage for deploymentConfigs, deployments and statefulSets deployed in an openshift cluster:

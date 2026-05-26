@@ -21,12 +21,14 @@ func TestDeploymentConfig(t *testing.T) {
 		strategy         openshiftAppsV1.DeploymentStrategyType
 	}{
 		{
+			// Same accounting as the "normal deployment" Deployment case:
+			// replicas + maxSurge + maxUnavailable = 15 pods worth of resources.
 			name:             "normal deploymentConfig",
 			deploymentConfig: normalDeploymentConfig,
-			cpuMin:           resource.MustParse("3250m"),
-			cpuMax:           resource.MustParse("6500m"),
-			memoryMin:        resource.MustParse("26Gi"),
-			memoryMax:        resource.MustParse("52Gi"),
+			cpuMin:           resource.MustParse("3750m"),
+			cpuMax:           resource.MustParse("7500m"),
+			memoryMin:        resource.MustParse("30Gi"),
+			memoryMax:        resource.MustParse("60Gi"),
 			replicas:         10,
 			maxReplicas:      13,
 			strategy:         openshiftAppsV1.DeploymentStrategyTypeRolling,

@@ -21,12 +21,16 @@ func TestDeployment(t *testing.T) {
 		strategy    appsv1.DeploymentStrategyType
 	}{
 		{
+			// replicas=10, maxSurge=25%=3, maxUnavailable=25%=2.
+			// Rollout reserves: replicas + maxSurge + maxUnavailable = 15 pods worth of resources,
+			// where (replicas - maxUnavailable + terminatingPodCount) = 10 pods use Containers and
+			// (maxSurge + maxUnavailable) = 5 pods use MaxResources (== Containers, no init container).
 			name:        "normal deployment",
 			deployment:  normalDeployment,
-			cpuMin:      resource.MustParse("3250m"),
-			cpuMax:      resource.MustParse("6500m"),
-			memoryMin:   resource.MustParse("26Gi"),
-			memoryMax:   resource.MustParse("52Gi"),
+			cpuMin:      resource.MustParse("3750m"),
+			cpuMax:      resource.MustParse("7500m"),
+			memoryMin:   resource.MustParse("30Gi"),
+			memoryMax:   resource.MustParse("60Gi"),
 			replicas:    10,
 			maxReplicas: 13,
 			strategy:    appsv1.RollingUpdateDeploymentStrategyType,
@@ -34,10 +38,10 @@ func TestDeployment(t *testing.T) {
 		{
 			name:        "deployment without strategy",
 			deployment:  deploymentWithoutStrategy,
-			cpuMin:      resource.MustParse("3250m"),
-			cpuMax:      resource.MustParse("13"),
-			memoryMin:   resource.MustParse("26Gi"),
-			memoryMax:   resource.MustParse("52Gi"),
+			cpuMin:      resource.MustParse("3750m"),
+			cpuMax:      resource.MustParse("15"),
+			memoryMin:   resource.MustParse("30Gi"),
+			memoryMax:   resource.MustParse("60Gi"),
 			replicas:    10,
 			maxReplicas: 13,
 			strategy:    appsv1.RollingUpdateDeploymentStrategyType,
@@ -78,12 +82,28 @@ func TestDeployment(t *testing.T) {
 		{
 			name:        "deployment without max unavailable/surge values",
 			deployment:  deploymentWithoutValues,
-			cpuMin:      resource.MustParse("3250m"),
-			cpuMax:      resource.MustParse("13"),
-			memoryMin:   resource.MustParse("26Gi"),
-			memoryMax:   resource.MustParse("52Gi"),
+			cpuMin:      resource.MustParse("3750m"),
+			cpuMax:      resource.MustParse("15"),
+			memoryMin:   resource.MustParse("30Gi"),
+			memoryMax:   resource.MustParse("60Gi"),
 			replicas:    10,
 			maxReplicas: 13,
+			strategy:    appsv1.RollingUpdateDeploymentStrategyType,
+		},
+		{
+			// replicas=10, maxSurge=2, maxUnavailable=2. The naive formula
+			// (replicas - maxUnavailable) * Containers + (maxSurge + maxUnavailable) * MaxResources
+			// would reserve only 12 pods worth of resources; the corrected formula reserves 14
+			// to cover the 2 pods that may still be in Terminating state while the controller
+			// has already scheduled their replacements.
+			name:        "rolling update reserves capacity for terminating pods",
+			deployment:  rollingUpdateWithTerminatingOverlap,
+			cpuMin:      resource.MustParse("3500m"),
+			cpuMax:      resource.MustParse("14"),
+			memoryMin:   resource.MustParse("28Gi"),
+			memoryMax:   resource.MustParse("56Gi"),
+			replicas:    10,
+			maxReplicas: 12,
 			strategy:    appsv1.RollingUpdateDeploymentStrategyType,
 		},
 		{
